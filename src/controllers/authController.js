@@ -1,6 +1,7 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { createUser, findUserByEmail } = require('../models/userModel');
+const { saveRefreshToken, findRefreshToken, deleteRefreshToken } = require('../models/refreshTokenModel');
 
 const register = async (req, res) => {
   try {
@@ -66,10 +67,21 @@ const login = async (req, res) => {
       { expiresIn: process.env.JWT_EXPIRES_IN }
     );
 
-    res.status(200).json({
-      message: 'Login successful',
-      accessToken
-    });
+
+  const refreshToken = jwt.sign(
+    { userId: user.id },
+    process.env.JWT_SECRET,
+    { expiresIn: process.env.REFRESH_TOKEN_EXPIRES_IN }
+  );
+
+  const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
+  await saveRefreshToken(user.id, refreshToken, expiresAt);
+
+  res.status(200).json({
+    message: 'Login successful',
+    accessToken,
+    refreshToken
+  });
 
   } catch (err) {
     console.error('Login error:', err.message);
@@ -77,4 +89,38 @@ const login = async (req, res) => {
   }
 };
 
-module.exports = { register, login };
+const refresh = async (req, res) => {
+  try {
+    const { refreshToken } = req.body;
+
+    if (!refreshToken) {
+      return res.status(400).json({ message: 'Refresh token is required' });
+    }
+
+    const stored = await findRefreshToken(refreshToken);
+    if (!stored) {
+      return res.status(401).json({ message: 'Invalid refresh token' });
+    }
+
+    if (new Date() > new Date(stored.expires_at)) {
+      await deleteRefreshToken(refreshToken);
+      return res.status(401).json({ message: 'Refresh token expired' });
+    }
+
+    const decoded = jwt.verify(refreshToken, process.env.JWT_SECRET);
+
+    const accessToken = jwt.sign(
+      { userId: decoded.userId },
+      process.env.JWT_SECRET,
+      { expiresIn: process.env.JWT_EXPIRES_IN }
+    );
+
+    res.status(200).json({ accessToken });
+
+  } catch (err) {
+    console.error('Refresh error:', err.message);
+    res.status(401).json({ message: 'Invalid refresh token' });
+  }
+};
+
+module.exports = { register, login, refresh };
