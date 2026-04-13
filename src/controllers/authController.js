@@ -1,7 +1,7 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { createUser, findUserByEmail } = require('../models/userModel');
-const { saveRefreshToken, findRefreshToken, deleteRefreshToken } = require('../models/refreshTokenModel');
+const { saveRefreshToken, findRefreshToken, deleteRefreshToken, deleteAllRefreshTokens } = require('../models/refreshTokenModel');
 
 const register = async (req, res) => {
   try {
@@ -123,4 +123,40 @@ const refresh = async (req, res) => {
   }
 };
 
-module.exports = { register, login, refresh };
+const logout = async (req, res) => {
+  try {
+    const { refreshToken } = req.body;
+
+    if (!refreshToken) {
+      return res.status(400).json({ message: 'Refresh token is required' });
+    }
+
+    await deleteRefreshToken(refreshToken);
+
+    res.status(200).json({ message: 'Logged out successfully' });
+
+  } catch (err) {
+    console.error('Logout error:', err.message);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+};
+
+const logoutAll = async (req, res) => {
+  try {
+    const { userId } = req.body;
+
+    if (!userId) {
+      return res.status(400).json({ message: 'User ID is required' });
+    }
+
+    await deleteAllRefreshTokens(userId);
+
+    res.status(200).json({ message: 'Logged out from all devices' });
+
+  } catch (err) {
+    console.error('Logout all error:', err.message);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+};
+
+module.exports = { register, login, refresh, logout, logoutAll };

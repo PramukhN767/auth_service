@@ -23,4 +23,11 @@ const deleteRefreshToken = async (token) => {
   );
 };
 
-module.exports = { saveRefreshToken, findRefreshToken, deleteRefreshToken };
+const deleteAllRefreshTokens = async (userId) => {
+  await pool.query(
+    'DELETE FROM refresh_tokens WHERE user_id = $1',
+    [userId]
+  );
+};
+
+module.exports = { saveRefreshToken, findRefreshToken, deleteRefreshToken, deleteAllRefreshTokens };
