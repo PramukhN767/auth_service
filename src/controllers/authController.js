@@ -1,5 +1,6 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const redisClient = require('../config/redis');
 const { createUser, findUserByEmail } = require('../models/userModel');
 const { saveRefreshToken, findRefreshToken, deleteRefreshToken, deleteAllRefreshTokens } = require('../models/refreshTokenModel');
 
@@ -125,10 +126,17 @@ const refresh = async (req, res) => {
 
 const logout = async (req, res) => {
   try {
-    const { refreshToken } = req.body;
+    const { refreshToken, accessToken } = req.body;
 
-    if (!refreshToken) {
-      return res.status(400).json({ message: 'Refresh token is required' });
+    if (!refreshToken || !accessToken) {
+      return res.status(400).json({ message: 'Refresh token and access token are required' });
+    }
+
+    const decoded = jwt.verify(accessToken, process.env.JWT_SECRET);
+    const ttl = decoded.exp - Math.floor(Date.now() / 1000); 
+
+    if (ttl > 0) {
+      await redisClient.setEx(`blacklist:${accessToken}`, ttl, 'true');
     }
 
     await deleteRefreshToken(refreshToken);
