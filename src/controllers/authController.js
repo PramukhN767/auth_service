@@ -8,7 +8,6 @@ const register = async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    // Basic validation
     if (!email || !password) {
       return res.status(400).json({ message: 'Email and password are required' });
     }
@@ -17,17 +16,14 @@ const register = async (req, res) => {
       return res.status(400).json({ message: 'Password must be at least 6 characters' });
     }
 
-    // Check if user already exists
     const existingUser = await findUserByEmail(email);
     if (existingUser) {
       return res.status(409).json({ message: 'Email already in use' });
     }
 
-    // Hash the password
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
-    // Save user to database
     const user = await createUser(email, hashedPassword);
 
     res.status(201).json({
@@ -49,40 +45,59 @@ const login = async (req, res) => {
       return res.status(400).json({ message: 'Email and password are required' });
     }
 
-    // Check if user exists
+    const ipKey = `bf:ip:${req.ip}`;
+    const accountKey = `bf:account:${email}`;
+
+    const ipAttempts = await redisClient.get(ipKey);
+    if (ipAttempts && parseInt(ipAttempts) >= 10) {
+      return res.status(429).json({ message: 'Too many failed attempts from this IP. Try again later.' });
+    }
+
+  
+    const accountAttempts = await redisClient.get(accountKey);
+    if (accountAttempts && parseInt(accountAttempts) >= 5) {
+      return res.status(429).json({ message: 'Too many failed attempts on this account. Try again later.' });
+    }
+
     const user = await findUserByEmail(email);
     if (!user) {
+      await redisClient.incr(ipKey);
+      await redisClient.expire(ipKey, 15 * 60); 
       return res.status(401).json({ message: 'Invalid credentials' });
     }
 
-    // Compare password
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
+      await redisClient.incr(ipKey);
+      await redisClient.expire(ipKey, 15 * 60);
+      await redisClient.incr(accountKey);
+      await redisClient.expire(accountKey, 15 * 60);
       return res.status(401).json({ message: 'Invalid credentials' });
     }
 
-    // Sign JWT
+    await redisClient.del(ipKey);
+    await redisClient.del(accountKey);
+
     const accessToken = jwt.sign(
       { userId: user.id, email: user.email },
       process.env.JWT_SECRET,
       { expiresIn: process.env.JWT_EXPIRES_IN }
     );
 
+    const refreshToken = jwt.sign(
+      { userId: user.id },
+      process.env.JWT_SECRET,
+      { expiresIn: process.env.REFRESH_TOKEN_EXPIRES_IN }
+    );
 
-  const refreshToken = jwt.sign(
-    { userId: user.id },
-    process.env.JWT_SECRET,
-    { expiresIn: process.env.REFRESH_TOKEN_EXPIRES_IN }
-  );
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+    await saveRefreshToken(user.id, refreshToken, expiresAt);
 
-  const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
-  await saveRefreshToken(user.id, refreshToken, expiresAt);
-
-  res.status(200).json({
-    message: 'Login successful',
-    accessToken,
-    refreshToken
-  });
+    res.status(200).json({
+      message: 'Login successful',
+      accessToken,
+      refreshToken
+    });
 
   } catch (err) {
     console.error('Login error:', err.message);
