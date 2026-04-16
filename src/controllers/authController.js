@@ -1,6 +1,7 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const redisClient = require('../config/redis');
+const crypto = require('crypto');
 const { createUser, findUserByEmail } = require('../models/userModel');
 const { saveRefreshToken, findRefreshToken, deleteRefreshToken, deleteAllRefreshTokens } = require('../models/refreshTokenModel');
 
@@ -85,7 +86,7 @@ const login = async (req, res) => {
     );
 
     const refreshToken = jwt.sign(
-      { userId: user.id },
+      { userId: user.id, jti: crypto.randomUUID() },
       process.env.JWT_SECRET,
       { expiresIn: process.env.REFRESH_TOKEN_EXPIRES_IN }
     );
